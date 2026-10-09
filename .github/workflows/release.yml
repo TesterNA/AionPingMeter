@@ -1,6 +1,7 @@
 name: Release
 
-# Builds and publishes a release when a version tag (e.g. v1.0.0) is pushed
+# Builds both downloads (standalone + light) and publishes a release
+# when a version tag (e.g. v1.0.1) is pushed or created from the Releases page.
 on:
   push:
     tags: ["v*"]
@@ -22,25 +23,51 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          dotnet build AionPingMeter.csproj -c Release -o publish -p:Version=$version
+          $common = @("AionPingMeter.csproj", "-c", "Release", "-r", "win-x64",
+                      "-p:Version=$version", "-p:PublishSingleFile=true", "-p:DebugType=none")
+
+          # Light: a single small exe that uses the installed .NET 8 Desktop Runtime
+          dotnet publish @common --self-contained false -o out/light
+
+          # Standalone: a single exe with the .NET runtime built in, nothing else to install
+          dotnet publish @common --self-contained true `
+            -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o out/standalone
 
       - name: Package
         shell: pwsh
         run: |
-          $name = "AionPingMeter-${{ github.ref_name }}-win-x64.zip"
-          Copy-Item README.md, LICENSE publish/
-          Compress-Archive -Path publish/* -DestinationPath $name
-          (Get-FileHash $name -Algorithm SHA256).Hash.ToLower() + "  " + $name | Out-File -Encoding ascii "$name.sha256"
+          $tag = "${{ github.ref_name }}"
+          $sizes = @{}
+          foreach ($kind in "standalone", "light") {
+            $dir = "out/$kind"
+            Get-ChildItem $dir | Where-Object Name -ne "AionPingMeter.exe" | Remove-Item -Recurse -Force
+            Copy-Item README.md, LICENSE $dir
+            $zip = "AionPingMeter-$tag-$kind.zip"
+            Compress-Archive -Path "$dir/*" -DestinationPath $zip
+            $mb = (Get-Item $zip).Length / 1MB
+            $fmt = if ($mb -ge 1) { "{0:0} MB" } else { "{0:0.0} MB" }
+            $sizes[$kind] = [string]::Format([cultureinfo]::InvariantCulture, $fmt, $mb)
+          }
+          Get-ChildItem *.zip | ForEach-Object {
+            "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Out-File -Encoding ascii SHA256SUMS.txt
+
+          # Release notes: download guide in three languages + this version's CHANGELOG section
+          $changelog = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($changelog, "(?ms)^## $([regex]::Escape($tag))\s*\r?\n(.*?)(?=^## |\z)")
+          $changes = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "See [CHANGELOG.md](CHANGELOG.md)." }
+          (Get-Content .github/RELEASE_NOTES.md -Raw).
+            Replace("{{TAG}}", $tag).
+            Replace("{{STANDALONE_SIZE}}", $sizes["standalone"]).
+            Replace("{{LIGHT_SIZE}}", $sizes["light"]).
+            Replace("{{CHANGES}}", $changes) | Out-File -Encoding utf8 release-notes.md
 
       - uses: softprops/action-gh-release@v2
         with:
+          name: AionPingMeter ${{ github.ref_name }}
+          body_path: release-notes.md
           files: |
-            AionPingMeter-${{ github.ref_name }}-win-x64.zip
-            AionPingMeter-${{ github.ref_name }}-win-x64.zip.sha256
-          body: |
-            ## Download
-            **AionPingMeter-${{ github.ref_name }}-win-x64.zip**: unzip anywhere and run `AionPingMeter.exe`.
-
-            Requires [Npcap](https://npcap.com/#download) and the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
-
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for what's new.
+            AionPingMeter-${{ github.ref_name }}-standalone.zip
+            AionPingMeter-${{ github.ref_name }}-light.zip
+            SHA256SUMS.txt
