@@ -44,43 +44,46 @@ Most ping tools either show a number that slowly drifts away from reality, or on
 ## Reading the overlay
 
 ```
-38 ms              max 39      ← in-game ping · highest in the last minute
-network 18                     ← pure network round-trip, updated continuously
+▂▄▆█  38 ms │ NET 18   MAX 39
+ │      │       │        └ highest in-game ping in the last minute
+ │      │       └ pure network round-trip, updated continuously
+ │      └ in-game ping
+ └ signal bars: connection quality at a glance
 ```
 
 | Value | Meaning |
 |---|---|
 | **ms** (big number) | Your **in-game ping**: the time from your client sending a request to the server's reply. It includes the trip there and back **plus** the time the server takes to process it. This is what you actually feel in game. |
-| **max** | The highest in-game ping during the last minute. |
-| **network** | The **pure network round-trip** to the game server, with no server processing. Updated many times per second. |
+| **MAX** | The highest in-game ping during the last minute. |
+| **NET** | The **pure network round-trip** to the game server, with no server processing. Updated many times per second. |
 
-> **Good to know:** `ms` is always higher than `network`. The difference is the server's reaction time (Aion 2 servers tick every 50 ms). If `network` is calm but `ms` jumps, the issue is on the server side, not yours.
+> **Good to know:** `ms` is always higher than `NET`. The difference is the server's reaction time (Aion 2 servers tick every 50 ms). If `NET` is calm but `ms` jumps, the issue is on the server side, not yours.
 
-The number turns 🟢 green below 60 ms, 🟡 yellow up to 120 ms and 🔴 red above that.
+The signal bars turn 🟢 green below 60 ms, 🟡 yellow up to 120 ms and 🔴 red above that.
 
 ---
 
 ## Lag alerts
 
-When something goes wrong, a third line appears and lists everything that happened in the last minute:
+When something goes wrong, a second pill appears under the overlay and lists everything that happened in the last minute:
 
 <div align="center">
   <img src="docs/overlay-alert.png" alt="Alert example" />
 </div>
 
 ```
-⚠ ping 1200 (server) · network 60 · freeze 450 · loss ×2 · 15s ago
+⚠ ping 1200 server · network 60 · freeze 450 · loss ×2 · 15s ago
 ```
 
 | Alert | What happened |
 |---|---|
-| `ping 1200 (server)` | In-game ping spiked. The label in brackets says where the time was lost: **(server)**, **(network)** or **(PC)**. |
+| `ping 1200 server` | In-game ping spiked. The word after the number says where the time was lost: **server**, **network** or **PC**. |
 | `network 60` | Your connection to the server got slower. |
 | `freeze 450` | The server stopped sending updates for 450 ms. This is a server-side stall, even when your network is perfect. |
 | `loss ×2` | Packets were lost and had to be re-sent. Usually felt as a micro-stutter. |
 
-- **First 10 seconds:** the line turns **red** and the overlay gets a red frame. The tray icon turns red too.
-- **Up to one minute:** the line stays **orange**, so you can still see that something happened *recently*.
+- **First 10 seconds:** the alert pill is **red** and the overlay gets a red outline. The tray icon turns red too.
+- **Up to one minute:** the alert pill stays **orange**, so you can still see that something happened *recently*.
 - **After that:** it disappears on its own.
 
 Your current ping and network stay visible the whole time.
@@ -89,9 +92,9 @@ Your current ping and network stay visible the whole time.
 
 | You see… | Most likely cause |
 |---|---|
-| `freeze` or `ping (server)`, network calm | The game server or gateway hiccuped. Nothing to fix on your side. |
+| `freeze` or `ping … server`, network calm | The game server or gateway hiccuped. Nothing to fix on your side. |
 | `network` and/or `loss` | Your Wi-Fi, router, provider or route to the server. |
-| `ping (PC)` | Your computer delayed the request, e.g. a CPU or disk spike. |
+| `ping … PC` | Your computer delayed the request, e.g. a CPU or disk spike. |
 | You felt a lag but **no alert at all** | A local stutter (FPS drop). The server and network were fine. |
 
 ---
@@ -136,7 +139,7 @@ Right-click the AionPingMeter icon next to the clock. If you don't see it, check
 | Item | Action |
 |---|---|
 | **Server: x.x.x.x:port** | The game gateway you're connected to. Click to copy it, handy for comparing with friends. |
-| **Show server in overlay** | Adds the gateway address as an extra line on the overlay. |
+| **Show server in overlay** | Adds the gateway address as a small pill under the overlay. |
 | **Move** / **Lock position** | Unlock the overlay, drag it anywhere, then lock it again. The position is remembered. |
 | **Reset position** | Puts the overlay back in the top-left corner of the main screen. |
 | **Write log** | Saves every measurement to a CSV file (see below). |

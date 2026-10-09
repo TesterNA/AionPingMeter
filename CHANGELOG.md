@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.2
+
+- New overlay look: a compact rounded capsule with signal bars, ping, NET and MAX.
+- Alerts now appear as a separate pill under the overlay (red at first, then orange), and the cause reads `ping 1200 server` instead of `ping 1200 (server)`.
+- Real per-pixel transparency and smooth rounded corners; the overlay uses the Bahnschrift font built into Windows.
+
 ## v1.0.1
 
 - Two downloads: **standalone** (everything built in, nothing to install except Npcap) and **light** (tiny, needs the .NET 8 Desktop Runtime).

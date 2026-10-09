@@ -27,6 +27,9 @@ static class Program
         if (Directory.Exists(npcapDir))
             Native.SetDllDirectory(npcapDir);
 
+        if (args.Length > 1 && args[0] == "--render-demo")
+            return Probe.RenderDemo(args[1]);
+
         if (args.Length > 0 && args[0] == "--gaps")
             return Probe.Gaps(args.Length > 1 ? int.Parse(args[1]) : 60);
 
@@ -883,6 +886,35 @@ static partial class Probe
 
 static partial class Probe
 {
+    /// <summary>AionPingMeter.exe --render-demo &lt;folder&gt;: renders sample overlay states to PNGs (README screenshots).</summary>
+    public static int RenderDemo(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        var green = Color.FromArgb(110, 220, 130);
+        var states = new (string File, OverlayModel Model)[]
+        {
+            ("overlay.png", new OverlayModel(green, "38", "18", "39", false, null, null, null, false, null, false)),
+            ("overlay-alert.png", new OverlayModel(green, "41", "18", "1200", true, null, "ping 1200", "server · freeze 450 · just now", true, null, false)),
+            ("overlay-recent.png", new OverlayModel(green, "39", "18", "1200", false, null, "ping 1200", "server · freeze 450 · 34s ago", false, null, false)),
+        };
+        foreach (var (file, model) in states)
+        {
+            using var pill = CapsuleRenderer.Render(model, 1.5f);
+            int pad = 18;
+            using var shot = new Bitmap(pill.Width + pad * 2, pill.Height + pad * 2);
+            using (var g = Graphics.FromImage(shot))
+            {
+                g.Clear(Color.FromArgb(27, 30, 34));
+                g.DrawImage(pill, pad, pad);
+            }
+            shot.Save(Path.Combine(folder, file), System.Drawing.Imaging.ImageFormat.Png);
+        }
+        return 0;
+    }
+}
+
+static partial class Probe
+{
     /// <summary>AionPingMeter.exe --gaps [seconds]: gaps between data packets on the game connection → gaps.txt.</summary>
     public static int Gaps(int seconds)
     {
@@ -1003,17 +1035,17 @@ sealed class OverlayForm : Form
     readonly NotifyIcon _tray;
     readonly ToolStripMenuItem _moveItem, _logItem, _serverItem;
     readonly System.Windows.Forms.Timer _timer;
-    readonly Font _bigFont = new("Segoe UI Semibold", 13f);
-    readonly Font _smallFont = new("Segoe UI", 7.5f);
     bool _locked = true;
-    string _big = "", _small = "", _max = "", _warn = "", _serverLine = "", _tip = "";
     bool _showServer = Settings.LoadShowServer();
-    Color _color = Color.Gray, _warnColor = Color.Gray;
-    bool _flash;
-    static readonly Color SmallText = Color.FromArgb(170, 176, 186);
-    static readonly Color WarnText = Color.FromArgb(255, 170, 60);
-    static readonly Color AlarmRed = Color.FromArgb(255, 80, 70);
+    OverlayModel? _model;
+    string _tip = "";
     int _tick;
+
+    static readonly Color Good = Color.FromArgb(110, 220, 130);
+    static readonly Color Fair = Color.FromArgb(240, 200, 90);
+    static readonly Color Poor = Color.FromArgb(255, 110, 100);
+    static readonly Color NoData = Color.FromArgb(140, 146, 156);
+    static readonly Color AlarmRed = Color.FromArgb(255, 90, 80);
 
     public OverlayForm(PingStats stats)
     {
@@ -1023,11 +1055,6 @@ sealed class OverlayForm : Form
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.FromArgb(18, 20, 24);
-        Opacity = 0.82;
-        DoubleBuffered = true;
-        float s = DeviceDpi / 96f;
-        ClientSize = new Size((int)(128 * s), (int)(38 * s));
         Location = Settings.LoadPosition() ?? DefaultLocation;
 
         _serverItem = new ToolStripMenuItem("Server: —") { Enabled = false };
@@ -1065,12 +1092,11 @@ sealed class OverlayForm : Form
         menu.Items.Add(BuildThresholdMenu());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Close());
-        _tray = new NotifyIcon { Icon = TrayIcons.For(Color.FromArgb(140, 146, 156)), Text = "AionPingMeter", ContextMenuStrip = menu, Visible = true };
+        _tray = new NotifyIcon { Icon = TrayIcons.For(NoData), Text = "AionPingMeter", ContextMenuStrip = menu, Visible = true };
 
         _timer = new System.Windows.Forms.Timer { Interval = 250 };
         _timer.Tick += (_, _) => UpdateView();
         _timer.Start();
-        UpdateView();
     }
 
     /// <summary>Top-left corner of the primary monitor.</summary>
@@ -1088,6 +1114,19 @@ sealed class OverlayForm : Form
         }
     }
 
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        UpdateView();
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        _model = null;   // re-render at the new scale
+        UpdateView();
+    }
+
     void SetLocked(bool locked)
     {
         _locked = locked;
@@ -1096,7 +1135,7 @@ sealed class OverlayForm : Form
         Native.SetWindowLongPtr(Handle, GwlExStyle, new IntPtr(ex));
         _moveItem.Text = locked ? "Move" : "Lock position";
         if (locked) Settings.SavePosition(Location);
-        Invalidate();
+        UpdateView();
     }
 
     ToolStripMenuItem BuildThresholdMenu()
@@ -1126,51 +1165,50 @@ sealed class OverlayForm : Form
 
     void UpdateView()
     {
-        var (cur, med, max) = _stats.Snapshot();
-        string big, small, maxText = "";
-        Color color;
+        var (cur, _, max) = _stats.Snapshot();
         var (net, _) = _stats.TcpSnapshot();
-        if (cur is double c)
-        {
-            big = $"{c:0} ms";
-            maxText = $"max {max:0}";
-            small = net is double n ? $"network {n:0}" : "network —";
-            color = c < 60 ? Color.FromArgb(110, 220, 130) : c < 120 ? Color.FromArgb(240, 200, 90) : Color.FromArgb(255, 110, 100);
-        }
-        else
-        {
-            big = "— ms";
-            small = _stats.Status;
-            color = Color.FromArgb(140, 146, 156);
-        }
-        // Third line — problems in the last minute: red for the first 10 s (plus a frame), then orange.
-        string warn = "";
-        Color warnColor = WarnText;
+
+        Color quality = cur is double c ? (c < 60 ? Good : c < 120 ? Fair : Poor) : NoData;
+
+        // Alert pill — problems in the last minute: red for the first 10 s (plus a red outline), then orange.
+        string? head = null, tail = null;
         bool flash = false;
         if (_stats.SpikeSnapshot() is { } sp)
         {
             flash = sp.SinceLastMs < PingStats.SpikeFlashMs;
-            var parts = new List<string>(3);
-            if (sp.GameMax is double gm) parts.Add(sp.GameCause is string gc ? $"ping {gm:0} ({gc})" : $"ping {gm:0}");
+            var parts = new List<string>(5);
+            if (sp.GameMax is double gm)
+            {
+                head = $"ping {gm:0}";
+                if (sp.GameCause is string gc) parts.Add(gc);
+            }
             if (sp.NetworkMax is double nm) parts.Add($"network {nm:0}");
             if (sp.FreezeMax is double fm) parts.Add($"freeze {fm:0}");
             if (sp.Losses > 0) parts.Add($"loss ×{sp.Losses}");
+            if (head == null) { head = parts[0]; parts.RemoveAt(0); }
             parts.Add(sp.SinceLastMs < 1000 ? "just now" : $"{sp.SinceLastMs / 1000}s ago");
-            warn = "⚠ " + string.Join(" · ", parts);
-            warnColor = flash ? AlarmRed : WarnText;
+            tail = string.Join(" · ", parts);
         }
 
-        string serverLine = _showServer ? _stats.GameEndpointText ?? "server —" : "";
+        var model = new OverlayModel(
+            quality,
+            cur is double v ? v.ToString("0") : "—",
+            cur is null ? null : net is double n ? n.ToString("0") : "—",
+            cur is null ? null : max.ToString("0"),
+            flash && max >= _stats.ThresholdMs,
+            cur is null ? _stats.Status : null,
+            head, tail, flash,
+            _showServer ? _stats.GameEndpointText ?? "server —" : null,
+            !_locked);
 
-        if (big != _big || small != _small || maxText != _max || warn != _warn || serverLine != _serverLine ||
-            color != _color || warnColor != _warnColor || flash != _flash)
+        if (model != _model && IsHandleCreated)
         {
-            if (color != _color || flash != _flash)
-                _tray.Icon = TrayIcons.For(flash ? AlarmRed : color);
-            bool relayout = small != _small || warn != _warn || serverLine != _serverLine;
-            (_big, _small, _max, _warn, _serverLine, _color, _warnColor, _flash) = (big, small, maxText, warn, serverLine, color, warnColor, flash);
-            if (relayout) Relayout();
-            Invalidate();
+            if (_model is null || model.Quality != _model.Quality || model.Flash != _model.Flash)
+                _tray.Icon = TrayIcons.For(model.Flash ? AlarmRed : model.Quality);
+            _model = model;
+            using var bmp = CapsuleRenderer.Render(model, DeviceDpi / 96f);
+            if (Size != bmp.Size) Size = bmp.Size;
+            LayeredWindow.Update(this, bmp);
         }
 
         if (++_tick % 4 == 0)
@@ -1184,54 +1222,6 @@ sealed class OverlayForm : Form
             if (tip.Length > 127) tip = tip[..127];   // Windows tray tooltip limit
             if (tip != _tip) _tray.Text = _tip = tip;
         }
-    }
-
-    /// <summary>Small lines under the ping: network, (gateway), (alerts).</summary>
-    IEnumerable<(string Text, Color Color)> SmallLines()
-    {
-        yield return (_small, SmallText);
-        if (_serverLine.Length > 0) yield return (_serverLine, SmallText);
-        if (_warn.Length > 0) yield return (_warn, _warnColor);
-    }
-
-    /// <summary>Height fits the number of lines, width fits the longest one.</summary>
-    void Relayout()
-    {
-        float s = DeviceDpi / 96f;
-        int width = (int)(128 * s), lines = 0;
-        foreach (var (text, _) in SmallLines())
-        {
-            width = Math.Max(width, TextRenderer.MeasureText(text, _smallFont).Width + (int)(16 * s));
-            lines++;
-        }
-        var size = new Size(width, (int)((24 + 14 * lines) * s));
-        if (ClientSize != size) ClientSize = size;
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        var g = e.Graphics;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-        float s = DeviceDpi / 96f;
-        using (var b = new SolidBrush(_color))
-            g.DrawString(_big, _bigFont, b, 6 * s, 0);
-        if (_max.Length > 0)
-            using (var b = new SolidBrush(SmallText))
-            using (var fmt = new StringFormat { Alignment = StringAlignment.Far })
-                g.DrawString(_max, _smallFont, b, new RectangleF(0, 6 * s, ClientSize.Width - 6 * s, 16 * s), fmt);
-        float y = 23 * s;
-        foreach (var (text, color) in SmallLines())
-        {
-            using var b = new SolidBrush(color);
-            g.DrawString(text, _smallFont, b, 8 * s, y);
-            y += 14 * s;
-        }
-        if (_flash)
-            using (var pen = new Pen(AlarmRed, 2 * s) { Alignment = System.Drawing.Drawing2D.PenAlignment.Inset })
-                g.DrawRectangle(pen, 0, 0, ClientSize.Width, ClientSize.Height);
-        else if (!_locked)
-            using (var pen = new Pen(Color.FromArgb(120, 170, 255)))
-                g.DrawRectangle(pen, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -1249,5 +1239,194 @@ sealed class OverlayForm : Form
         _tray.Visible = false;
         _tray.Dispose();
         base.OnFormClosed(e);
+    }
+}
+
+/// <summary>Everything the overlay shows; a new picture is drawn only when this changes.</summary>
+sealed record OverlayModel(
+    Color Quality, string Ping, string? Network, string? Max, bool MaxHot, string? Status,
+    string? AlertHead, string? AlertTail, bool Flash, string? Server, bool Unlocked);
+
+/// <summary>
+/// Draws the "capsule" overlay: a rounded pill with signal bars, ping, NET and MAX,
+/// plus optional pills underneath for the gateway address and recent problems.
+/// </summary>
+static class CapsuleRenderer
+{
+    static readonly string Regular = Pick("Bahnschrift", "Segoe UI");
+    static readonly string Bold = Pick("Bahnschrift SemiBold", "Segoe UI Semibold");
+
+    static readonly Color PillFill = Color.FromArgb(204, 14, 16, 20);
+    static readonly Color Hairline = Color.FromArgb(18, 255, 255, 255);
+    static readonly Color Divider = Color.FromArgb(31, 255, 255, 255);
+    static readonly Color Text = Color.FromArgb(238, 242, 246);
+    static readonly Color Muted = Color.FromArgb(154, 161, 171);
+    static readonly Color Label = Color.FromArgb(141, 148, 158);
+    static readonly Color Value = Color.FromArgb(201, 206, 214);
+    static readonly Color HotValue = Color.FromArgb(255, 138, 128);
+    static readonly Color AlarmLine = Color.FromArgb(255, 90, 80);
+    static readonly Color MoveLine = Color.FromArgb(120, 170, 255);
+    static readonly Color AlarmFill = Color.FromArgb(230, 84, 18, 16);
+    static readonly Color AlarmText = Color.FromArgb(255, 194, 188);
+    static readonly Color WarnText = Color.FromArgb(255, 191, 115);
+    static readonly Color WarnIcon = Color.FromArgb(255, 170, 60);
+
+    static string Pick(string wanted, string fallback)
+    {
+        using var fonts = new System.Drawing.Text.InstalledFontCollection();
+        return fonts.Families.Any(f => f.Name == wanted) ? wanted : fallback;
+    }
+
+    public static Bitmap Render(OverlayModel m, float s)
+    {
+        using var big = new Font(Bold, 22 * s, GraphicsUnit.Pixel);
+        using var unit = new Font(Regular, 11 * s, GraphicsUnit.Pixel);
+        using var label = new Font(Regular, 10 * s, GraphicsUnit.Pixel);
+        using var value = new Font(Regular, 13 * s, GraphicsUnit.Pixel);
+        using var note = new Font(Regular, 12 * s, GraphicsUnit.Pixel);
+        using var noteBold = new Font(Bold, 12 * s, GraphicsUnit.Pixel);
+        using var small = new Font(Regular, 11 * s, GraphicsUnit.Pixel);
+
+        using var probe = new Bitmap(1, 1);
+        using var mg = Graphics.FromImage(probe);
+        float W(string t, Font f) => t.Length == 0 ? 0 : mg.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width;
+
+        // ── layout ──
+        float capH = 34 * s, gap = 10 * s;
+        float capW = 12 * s + 16 * s + gap + W(m.Ping, big) + 3 * s + W("ms", unit) + gap + 1 * s + gap;
+        if (m.Status != null) capW += W(m.Status, note);
+        else capW += W("NET", label) + 4 * s + W(m.Network!, value) + gap + W("MAX", label) + 4 * s + W(m.Max!, value);
+        capW += 16 * s;
+
+        float pillH = 25 * s, pillGap = 4 * s;
+        float serverW = m.Server != null ? 11 * s + W(m.Server, small) + 14 * s : 0;
+        float alertW = m.AlertHead != null
+            ? 11 * s + 13 * s + 7 * s + W(m.AlertHead, m.Flash ? noteBold : note) + W(" " + m.AlertTail, note) + 14 * s : 0;
+
+        int width = (int)Math.Ceiling(Math.Max(capW, Math.Max(serverW, alertW))) + 2;
+        float h = capH + (m.Server != null ? pillGap + pillH : 0) + (m.AlertHead != null ? pillGap + pillH : 0);
+        var bmp = new Bitmap(width, (int)Math.Ceiling(h) + 2, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        g.Clear(Color.Transparent);
+
+        // ── main capsule ──
+        var border = m.Unlocked ? MoveLine : m.Flash ? AlarmLine : Hairline;
+        Pill(g, 0.5f, 0.5f, capW, capH, PillFill, border, s);
+
+        float x = 12 * s, mid = 0.5f + capH / 2, baseline = mid + 22 * s * 0.36f;
+        using (var q = new SolidBrush(m.Quality))
+        {
+            float[] hs = { 4, 7, 10, 14 };
+            for (int i = 0; i < 4; i++)
+                g.FillRectangle(q, x + i * 4.3f * s, mid + 7 * s - hs[i] * s, 3 * s, hs[i] * s);
+        }
+        x += 16 * s + gap;
+        x += Draw(g, m.Ping, big, Text, x, baseline) + 3 * s;
+        x += Draw(g, "ms", unit, Muted, x, baseline) + gap;
+        using (var d = new SolidBrush(Divider)) g.FillRectangle(d, x, mid - 8 * s, 1 * s, 16 * s);
+        x += 1 * s + gap;
+        if (m.Status != null)
+            Draw(g, m.Status, note, Muted, x, baseline);
+        else
+        {
+            x += Draw(g, "NET", label, Label, x, baseline) + 4 * s;
+            x += Draw(g, m.Network!, value, Value, x, baseline) + gap;
+            x += Draw(g, "MAX", label, Label, x, baseline) + 4 * s;
+            Draw(g, m.Max!, value, m.MaxHot ? HotValue : Value, x, baseline);
+        }
+
+        // ── extra pills ──
+        float y = 0.5f + capH;
+        if (m.Server != null)
+        {
+            y += pillGap;
+            Pill(g, 0.5f, y, serverW, pillH, PillFill, Color.Empty, s);
+            Draw(g, m.Server, small, Muted, 0.5f + 11 * s, y + pillH / 2 + 11 * s * 0.36f);
+            y += pillH;
+        }
+        if (m.AlertHead != null)
+        {
+            y += pillGap;
+            Pill(g, 0.5f, y, alertW, pillH, m.Flash ? AlarmFill : PillFill, Color.Empty, s);
+            float ax = 0.5f + 11 * s, am = y + pillH / 2, ab = am + 12 * s * 0.36f;
+            Warning(g, ax, am, m.Flash ? AlarmLine : WarnIcon, s);
+            ax += 13 * s + 7 * s;
+            ax += Draw(g, m.AlertHead, m.Flash ? noteBold : note, m.Flash ? Color.White : WarnText, ax, ab);
+            Draw(g, " " + m.AlertTail, note, m.Flash ? AlarmText : WarnText, ax, ab);
+        }
+        return bmp;
+    }
+
+    /// <summary>Draws text with its baseline at y; returns the advance width.</summary>
+    static float Draw(Graphics g, string text, Font f, Color c, float x, float baseline)
+    {
+        var ff = f.FontFamily;
+        float ascent = f.Size * ff.GetCellAscent(f.Style) / ff.GetEmHeight(f.Style);
+        using var b = new SolidBrush(c);
+        g.DrawString(text, f, b, x, baseline - ascent, StringFormat.GenericTypographic);
+        return g.MeasureString(text, f, PointF.Empty, StringFormat.GenericTypographic).Width;
+    }
+
+    static void Pill(Graphics g, float x, float y, float w, float h, Color fill, Color line, float s)
+    {
+        using var path = new System.Drawing.Drawing2D.GraphicsPath();
+        path.AddArc(x, y, h, h, 90, 180);
+        path.AddArc(x + w - h, y, h, h, 270, 180);
+        path.CloseFigure();
+        using (var b = new SolidBrush(fill)) g.FillPath(b, path);
+        if (!line.IsEmpty)
+            using (var p = new Pen(line, 1 * s)) g.DrawPath(p, path);
+    }
+
+    /// <summary>A small outlined warning triangle with an exclamation mark, centred vertically on mid.</summary>
+    static void Warning(Graphics g, float x, float mid, Color c, float s)
+    {
+        float top = mid - 5 * s;
+        using var pen = new Pen(c, 1.6f * s) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round, StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+        g.DrawPolygon(pen, new[] { new PointF(x + 6.5f * s, top), new PointF(x + 12 * s, top + 10 * s), new PointF(x + 1 * s, top + 10 * s) });
+        g.DrawLine(pen, x + 6.5f * s, top + 3.5f * s, x + 6.5f * s, top + 6.3f * s);
+        using var b = new SolidBrush(c);
+        g.FillEllipse(b, x + 5.6f * s, top + 7.3f * s, 1.8f * s, 1.8f * s);
+    }
+}
+
+/// <summary>Puts a 32-bit ARGB bitmap on a layered window, with per-pixel transparency.</summary>
+static class LayeredWindow
+{
+    [StructLayout(LayoutKind.Sequential)] struct SizeI { public int W, H; }
+    [StructLayout(LayoutKind.Sequential)] struct PointI { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential, Pack = 1)] struct Blend { public byte Op, Flags, Alpha, Format; }
+
+    [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+    [DllImport("user32.dll")]
+    static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr dst, IntPtr ptDst, ref SizeI size,
+        IntPtr src, ref PointI ptSrc, int key, ref Blend blend, int flags);
+
+    public static void Update(Form form, Bitmap bmp)
+    {
+        IntPtr screen = GetDC(IntPtr.Zero), mem = CreateCompatibleDC(screen);
+        IntPtr hbmp = bmp.GetHbitmap(Color.FromArgb(0)), old = SelectObject(mem, hbmp);
+        try
+        {
+            var size = new SizeI { W = bmp.Width, H = bmp.Height };
+            var src = new PointI();
+            var blend = new Blend { Op = 0, Flags = 0, Alpha = 255, Format = 1 };   // AC_SRC_OVER, AC_SRC_ALPHA
+            UpdateLayeredWindow(form.Handle, screen, IntPtr.Zero, ref size, mem, ref src, 0, ref blend, 2);   // ULW_ALPHA
+        }
+        finally
+        {
+            SelectObject(mem, old);
+            DeleteObject(hbmp);
+            DeleteDC(mem);
+            ReleaseDC(IntPtr.Zero, screen);
+        }
     }
 }
