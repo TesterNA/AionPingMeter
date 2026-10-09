@@ -1,0 +1,46 @@
+name: Release
+
+# Builds and publishes a release when a version tag (e.g. v1.0.0) is pushed
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          dotnet build AionPingMeter.csproj -c Release -o publish -p:Version=$version
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "AionPingMeter-${{ github.ref_name }}-win-x64.zip"
+          Copy-Item README.md, LICENSE publish/
+          Compress-Archive -Path publish/* -DestinationPath $name
+          (Get-FileHash $name -Algorithm SHA256).Hash.ToLower() + "  " + $name | Out-File -Encoding ascii "$name.sha256"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            AionPingMeter-${{ github.ref_name }}-win-x64.zip
+            AionPingMeter-${{ github.ref_name }}-win-x64.zip.sha256
+          body: |
+            ## Download
+            **AionPingMeter-${{ github.ref_name }}-win-x64.zip**: unzip anywhere and run `AionPingMeter.exe`.
+
+            Requires [Npcap](https://npcap.com/#download) and the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for what's new.
