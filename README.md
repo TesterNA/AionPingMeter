@@ -29,6 +29,7 @@ Most ping tools either show a number that slowly drifts away from reality, or on
 
 | | |
 |---|---|
+| 🔓 **Open source: nothing hidden** | A tool that reads your network traffic should never be a black box. Every line of AionPingMeter is public. You can see exactly what it does, check that it sends nothing anywhere, and build it yourself. The whole program is one readable file, [`Program.cs`](Program.cs). |
 | 🎯 **Measured the way the game measures it** | AionPingMeter reads the game's own ping exchange with the server, the same one the client uses internally. You see the latency the game really has, not a guess based on some other connection. |
 | ⏱️ **One clock, zero drift** | Send and receive times come from the same hardware timer the game itself uses. Windows clock corrections, time sync and long sessions can't add a hidden +100 ms that never goes away. The number is as true after 8 hours as after 8 seconds. |
 | 🔍 **Tells you *where* the lag is** | Every spike is broken down into **PC → network → server**, so you know whether to blame your Wi-Fi, your provider, or the game. |
