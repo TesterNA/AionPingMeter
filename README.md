@@ -97,16 +97,25 @@ Your current ping and network stay visible the whole time.
 
 ## Installation
 
+### Which file should I download?
+
+Every [release](../../releases/latest) comes in two versions. Both work exactly the same way:
+
+| File | Size | Who it's for |
+|---|---|---|
+| **`AionPingMeter-vX.Y.Z-standalone.zip`** | tens of MB | 👍 **Recommended. Not sure? Take this one.** Everything is built in, nothing else to install. |
+| **`AionPingMeter-vX.Y.Z-light.zip`** | ~0.2 MB | Tiny version for users who already have the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0). Without it, the app won't start. |
+
 ### Requirements
 
 - Windows 10 / 11 (64-bit)
-- [**Npcap**](https://npcap.com/#download). If you already use another network-based meter, you probably have it.
+- [**Npcap**](https://npcap.com/#download) (free), needed by **both** versions. If you already use another network-based meter, you probably have it.
   During setup, keep **"Restrict Npcap driver's access to Administrators only"** *unchecked*.
-- [**.NET 8 Desktop Runtime**](https://dotnet.microsoft.com/download/dotnet/8.0) (x64)
+- [**.NET 8 Desktop Runtime**](https://dotnet.microsoft.com/download/dotnet/8.0) (x64): **light version only**.
 
 ### Run
 
-1. Download **`AionPingMeter-vX.Y.Z-win-x64.zip`** from the [latest release](../../releases/latest).
+1. Download the archive you picked from the [latest release](../../releases/latest).
 2. Unzip it into any folder, for example `C:\Games\AionPingMeter`.
 3. Start `AionPingMeter.exe`. Admin rights are not required.
 4. Launch Aion 2. The overlay fills in automatically within ~10 seconds of entering the world.

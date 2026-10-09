@@ -97,16 +97,25 @@ network 18                     ← чистая сетевая задержка,
 
 ## Установка
 
+### Какой файл скачать?
+
+Каждый [релиз](../../releases/latest) выходит в двух версиях. Работают они одинаково:
+
+| Файл | Размер | Для кого |
+|---|---|---|
+| **`AionPingMeter-vX.Y.Z-standalone.zip`** | десятки МБ | 👍 **Рекомендуется. Не уверен — бери этот.** Всё уже внутри, ничего дополнительно устанавливать не нужно. |
+| **`AionPingMeter-vX.Y.Z-light.zip`** | ~0,2 МБ | Лёгкая версия для тех, у кого уже установлен [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0). Без него программа не запустится. |
+
 ### Что нужно
 
 - Windows 10 / 11 (64-bit)
-- [**Npcap**](https://npcap.com/#download). Если ты уже пользуешься другим сетевым метром, он, скорее всего, установлен.
+- [**Npcap**](https://npcap.com/#download) (бесплатный), нужен **обеим** версиям. Если ты уже пользуешься другим сетевым метром, он, скорее всего, установлен.
   При установке **не ставь** галочку **«Restrict Npcap driver's access to Administrators only»**.
-- [**.NET 8 Desktop Runtime**](https://dotnet.microsoft.com/download/dotnet/8.0) (x64)
+- [**.NET 8 Desktop Runtime**](https://dotnet.microsoft.com/download/dotnet/8.0) (x64): **только для лёгкой версии**.
 
 ### Запуск
 
-1. Скачай **`AionPingMeter-vX.Y.Z-win-x64.zip`** из [последнего релиза](../../releases/latest).
+1. Скачай выбранный архив из [последнего релиза](../../releases/latest).
 2. Распакуй в любую папку, например `C:\Games\AionPingMeter`.
 3. Запусти `AionPingMeter.exe`. Права администратора не нужны.
 4. Запусти Aion 2. Оверлей заполнится сам в течение ~10 секунд после входа в мир.

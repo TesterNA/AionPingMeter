@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.1
+
+- Two downloads: **standalone** (everything built in, nothing to install except Npcap) and **light** (tiny, needs the .NET 8 Desktop Runtime).
+- Both are now a single `AionPingMeter.exe` instead of several files.
+- Release notes and README explain which one to pick, in English, Ukrainian and Russian.
+
 ## v1.0.0
 
 First public release.
